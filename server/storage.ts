@@ -33,6 +33,7 @@ import { randomUUID } from "crypto";
 import { db } from "./db";
 import { and, eq, desc, gte, inArray, sql } from "drizzle-orm";
 import { InvoiceNumberRepairError, type InvoiceNumberChange } from "@shared/invoice-number-repair";
+import { assertNewInventoryProducts } from "@shared/inventory-import";
 
 export type InvoiceItemWithInventoryRef = InsertInvoiceItem & {
   inventoryItemId?: string;
@@ -373,8 +374,7 @@ export class MemStorage implements IStorage {
 
   async bulkUpdateInventory(items: InsertInventoryItem[]): Promise<boolean> {
     try {
-      // Clear existing inventory
-      this.inventoryItems.clear();
+      assertNewInventoryProducts(Array.from(this.inventoryItems.values()), items);
       
       // Add all new items
       for (const item of items) {
@@ -963,23 +963,20 @@ export class DatabaseStorage implements IStorage {
 
   async bulkUpdateInventory(items: InsertInventoryItem[]): Promise<boolean> {
     try {
-      // Clear existing inventory
-      await db.delete(inventoryItems);
-      
-      // Insert all new items
-      if (items.length > 0) {
+      return await db.transaction(async (tx) => {
+        await tx.execute(sql`LOCK TABLE inventory_items IN SHARE ROW EXCLUSIVE MODE`);
+        const existing = await tx.select().from(inventoryItems);
+        assertNewInventoryProducts(existing, items);
         const itemsToInsert = items.map(item => ({
           ...item,
-          costPrice: item.costPrice ? item.costPrice.toString() : null,
-          sellingPrice: item.sellingPrice ? item.sellingPrice.toString() : null,
+          costPrice: item.costPrice != null ? item.costPrice.toString() : null,
+          sellingPrice: item.sellingPrice != null ? item.sellingPrice.toString() : null,
         }));
-        await db.insert(inventoryItems).values(itemsToInsert);
-      }
-      
-      return true;
+        if (itemsToInsert.length) await tx.insert(inventoryItems).values(itemsToInsert);
+        return true;
+      });
     } catch (error) {
-      console.error("Bulk update error:", error);
-      return false;
+      throw error;
     }
   }
 

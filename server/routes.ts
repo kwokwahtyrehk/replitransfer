@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { getDashboardStats } from "./dashboard-stats";
+import { buildDataExport } from "./data-export";
 import { invoiceNumberRepairSchema, InvoiceNumberRepairError } from "@shared/invoice-number-repair";
 import { insertInventoryItemValidatedSchema, insertInventoryItemSchema, insertInvoiceSchema, insertInvoiceItemSchema, insertExpenseSchema, confirmRecurringExpenseSchema, updateExpenseSettingsSchema, loginSchema, changePasswordSchema } from "@shared/schema";
 import { z } from "zod";
@@ -224,7 +225,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/inventory/:id", async (req, res) => {
+  app.put("/api/inventory/:id", requireAuth, async (req, res) => {
     try {
       // Use a more flexible validation for updates
       const validatedData = z.object({
@@ -259,7 +260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/inventory/:id", async (req, res) => {
+  app.delete("/api/inventory/:id", requireAuth, async (req, res) => {
     try {
       const success = await storage.deleteInventoryItem(req.params.id);
       if (!success) {
@@ -271,18 +272,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/inventory/bulk-update", async (req, res) => {
+  app.post("/api/inventory/bulk-update", requireAuth, async (req, res) => {
     try {
       const { items } = req.body;
       
-      if (!Array.isArray(items)) {
-        return res.status(400).json({ message: "Items must be an array" });
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: "Items must be a non-empty array" });
       }
 
       // Validate each item
       const validatedItems = items.map((item, index) => {
         try {
-          return insertInventoryItemValidatedSchema.parse(item);
+          const validated = insertInventoryItemValidatedSchema.parse(item);
+          if (!Number.isSafeInteger(validated.quantity ?? 0)) {
+            throw new Error(`Item ${index + 1}: Quantity must be a whole number`);
+          }
+          return validated;
         } catch (error) {
           if (error instanceof z.ZodError) {
             throw new Error(`Item ${index + 1}: ${error.errors.map(e => e.message).join(", ")}`);
@@ -304,6 +309,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         message: error instanceof Error ? error.message : "Failed to update inventory"
       });
+    }
+  });
+
+  // Read-only, consistent snapshot. No response payload is logged.
+  app.get("/api/data-export", requireAuth, async (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    let client;
+    try {
+      client = await pool.connect();
+      const data = await buildDataExport(client);
+      res.type("application/json").send(JSON.stringify(data));
+    } catch {
+      res.status(500).json({ message: "Full export failed. No data was changed. Please retry." });
+    } finally {
+      client?.release();
     }
   });
 

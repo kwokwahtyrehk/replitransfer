@@ -12,6 +12,8 @@ import { queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
 import type { InventoryItemWithDotUnits } from "@shared/schema";
 import AddInventoryModal from "@/components/add-inventory-modal";
+import { useDataExport } from "@/hooks/use-data-export";
+import { parseInventoryCSV } from "@shared/inventory-import";
 
 const normalizeSearchText = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
@@ -19,6 +21,7 @@ const getSearchAlias = (value: string) =>
   (value.toLowerCase().match(/[a-z]+|\d+/g) ?? []).map((part) => part[0]).join("");
 
 export default function Inventory() {
+  const { isExporting, downloadFullExport } = useDataExport();
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItemWithDotUnits | null>(null);
@@ -187,7 +190,7 @@ export default function Inventory() {
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
       toast({
         title: "Success",
-        description: "Inventory updated successfully",
+        description: "New products imported. Existing stock and DOT records were unchanged.",
       });
     },
     onError: (error: any) => {
@@ -249,7 +252,7 @@ export default function Inventory() {
     ]);
 
     const csvContent = [headers, ...csvData]
-      .map(row => row.map(field => `"${field}"`).join(","))
+      .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(","))
       .join("\n");
 
     // Download CSV file
@@ -272,38 +275,8 @@ export default function Inventory() {
   };
 
   const handleImport = () => {
+    if (!window.confirm("Import NEW products only. Existing inventory will not be replaced or updated. Duplicate products cause the entire import to be rejected. CSV does not import DOT units or historical invoice links. Continue?")) return;
     fileInputRef.current?.click();
-  };
-
-  const parseCSVLine = (line: string): string[] => {
-    const result: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      
-      if (char === '"') {
-        if (inQuotes && line[i + 1] === '"') {
-          // Handle escaped quotes ""
-          current += '"';
-          i++; // Skip next quote
-        } else {
-          // Toggle quote mode
-          inQuotes = !inQuotes;
-        }
-      } else if (char === ',' && !inQuotes) {
-        // End of field
-        result.push(current.trim());
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    
-    // Don't forget the last field
-    result.push(current.trim());
-    return result;
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -332,13 +305,13 @@ export default function Inventory() {
         }
         
         // Handle different line endings
-        const lines = csv.split(/\r?\n/).filter(line => line.trim());
+        const lines = parseInventoryCSV(csv);
         
         if (lines.length < 2) {
           throw new Error("CSV file must contain headers and at least one data row");
         }
 
-        const headers = parseCSVLine(lines[0]).map(h => h.replace(/"/g, "").trim());
+        const headers = lines[0].map(h => h.trim());
         
         const expectedHeaders = [
           "category",
@@ -381,12 +354,13 @@ export default function Inventory() {
 
         const items = lines.slice(1).map((line, index) => {
           try {
-            const values = parseCSVLine(line);
+            const values = line;
+            if (values.length !== headers.length) throw new Error("Column count does not match headers");
             const item: any = {};
 
             headers.forEach((header, i) => {
               const mappedHeader = headerMap.get(header);
-              const value = values[i]?.replace(/"/g, "").trim() || "";
+              const value = values[i]?.trim() || "";
               
               if (!mappedHeader) return;
 
@@ -419,16 +393,19 @@ export default function Inventory() {
                   if (value) item.productName = value;
                   break;
                 case "quantity":
-                  const qty = parseInt(value);
-                  item.quantity = isNaN(qty) ? 0 : qty;
+                  const qty = value === "" ? 0 : Number(value);
+                  if (!Number.isSafeInteger(qty) || qty < 0) throw new Error("Quantity must be a non-negative whole number");
+                  item.quantity = qty;
                   break;
                 case "cost price":
-                  const cost = parseFloat(value);
-                  if (!isNaN(cost) && value !== "") item.costPrice = cost;
+                  const cost = Number(value);
+                  if (value !== "" && (!Number.isFinite(cost) || cost < 0)) throw new Error("Invalid cost price");
+                  if (value !== "") item.costPrice = cost;
                   break;
                 case "selling price":
-                  const selling = parseFloat(value);
-                  if (!isNaN(selling) && value !== "") item.sellingPrice = selling;
+                  const selling = Number(value);
+                  if (value !== "" && (!Number.isFinite(selling) || selling < 0)) throw new Error("Invalid selling price");
+                  if (value !== "") item.sellingPrice = selling;
                   break;
                 case "remark":
                   if (value) item.remark = value;
@@ -531,6 +508,10 @@ export default function Inventory() {
           <p className="text-sm text-muted-foreground hidden sm:block">Manage your tyre stock and inventory levels</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button onClick={() => void downloadFullExport()} disabled={isExporting} variant="outline" data-testid="btn-export-all-data">
+            <Download className="w-4 h-4 mr-2" />
+            {isExporting ? "Exporting..." : "Export All Data"}
+          </Button>
           <Button 
             onClick={handleExport}
             variant="outline"
@@ -542,11 +523,11 @@ export default function Inventory() {
           <Button 
             onClick={handleImport}
             variant="outline"
-            disabled={isImporting}
+            disabled={isImporting || bulkUpdateMutation.isPending}
             data-testid="btn-import-inventory"
           >
             <Upload className="w-4 h-4 mr-2" />
-            {isImporting ? "Importing..." : "Import CSV"}
+            {isImporting || bulkUpdateMutation.isPending ? "Importing..." : "Import New Products"}
           </Button>
           <Button 
             onClick={() => setIsAddModalOpen(true)}

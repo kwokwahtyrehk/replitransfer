@@ -21,8 +21,10 @@ import InvoiceTemplateSettings from "@/components/invoice-template-settings";
 import InvoiceNumberRepairModal from "@/components/invoice-number-repair-modal";
 import { CalculateProfitModal } from "@/components/calculate-profit-modal";
 import { format } from "date-fns";
+import { useDataExport } from "@/hooks/use-data-export";
 
 export default function Invoices() {
+  const { isExporting, downloadFullExport } = useDataExport();
   const [searchTerm, setSearchTerm] = useState("");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceWithItems | null>(null);
@@ -616,6 +618,11 @@ export default function Invoices() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>Invoice tools</DropdownMenuLabel>
+              <DropdownMenuItem disabled={isExporting} onSelect={() => void downloadFullExport()} data-testid="btn-export-all-data">
+                <Download className="mr-2 h-4 w-4" />
+                {isExporting ? "Exporting all data..." : "Export All Data (JSON)"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={handleBackupJSON} data-testid="btn-backup-json">
                 <Database className="mr-2 h-4 w-4" />
                 Backup (JSON)
