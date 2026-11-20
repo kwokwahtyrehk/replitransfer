@@ -8,9 +8,6 @@ vite.config.ts.*
 .env.*
 attached_assets/
 .agents/memory/
-/replit.md
 /after-login-fallback.png
 /login-current-state.png
-/qa-order-export.xlsx
 /qa-delivery-export.doc
-/inventory-export-2025-11-19.csv
