@@ -1,0 +1,16 @@
+node_modules
+dist
+.DS_Store
+server/public
+vite.config.ts.*
+*.tar.gz
+.env
+.env.*
+attached_assets/
+.agents/memory/
+/replit.md
+/after-login-fallback.png
+/login-current-state.png
+/qa-order-export.xlsx
+/qa-delivery-export.doc
+/inventory-export-2025-11-19.csv
