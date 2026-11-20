@@ -24,7 +24,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     resolver: zodResolver(loginSchema),
     defaultValues: {
       username: "",
-      password: "",
       rememberMe: false,
     },
   });
@@ -44,7 +43,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     onError: (error: any) => {
       toast({
         title: "Login Failed",
-        description: error?.message || "Invalid username or password",
+        description: error?.message || "Invalid username",
         variant: "destructive",
       });
     },
@@ -74,7 +73,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               Sign In
             </CardTitle>
             <p className="text-sm text-muted-foreground text-center">
-              Enter your credentials to access the system
+              Enter your username to access the system
             </p>
           </CardHeader>
           <CardContent>
@@ -96,30 +95,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                             className="pl-10"
                             disabled={isLoading}
                             data-testid="input-username"
-                          />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            {...field}
-                            type="password"
-                            placeholder="Enter your password"
-                            className="pl-10"
-                            disabled={isLoading}
-                            data-testid="input-password"
                           />
                         </div>
                       </FormControl>

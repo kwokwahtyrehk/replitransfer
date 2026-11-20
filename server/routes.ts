@@ -63,8 +63,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = loginSchema.parse(req.body);
       const user = await storage.getUserByUsername(validatedData.username);
       
-      if (!user || !await bcrypt.compare(validatedData.password, user.password)) {
-        return res.status(401).json({ message: "Invalid username or password" });
+      if (!user) {
+        return res.status(401).json({ message: "Invalid username" });
       }
 
       // Set session
